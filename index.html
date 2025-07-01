@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battery Level Kalman Filter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8fafc;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            margin-bottom: 24px;
+        }
+        
+        .title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #1f2937;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+        
+        .info-box {
+            background-color: #dbeafe;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+        
+        .info-title {
+            font-weight: 600;
+            color: #1e40af;
+            margin-bottom: 8px;
+        }
+        
+        .info-text {
+            color: #1e40af;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .info-text p {
+            margin-bottom: 8px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        
+        .btn-primary {
+            background-color: #10b981;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #059669;
+        }
+        
+        .btn-danger {
+            background-color: #ef4444;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #dc2626;
+        }
+        
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .status-card {
+            padding: 16px;
+            border-radius: 8px;
+        }
+        
+        .status-card.blue {
+            background-color: #dbeafe;
+        }
+        
+        .status-card.green {
+            background-color: #dcfce7;
+        }
+        
+        .status-card.purple {
+            background-color: #f3e8ff;
+        }
+        
+        .status-card.orange {
+            background-color: #fed7aa;
+        }
+        
+        .status-card h3 {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .status-card.blue h3 { color: #1e40af; }
+        .status-card.green h3 { color: #166534; }
+        .status-card.purple h3 { color: #7c3aed; }
+        .status-card.orange h3 { color: #ea580c; }
+        
+        .status-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        
+        .status-card.blue .status-value { color: #2563eb; }
+        .status-card.green .status-value { color: #16a34a; }
+        .status-card.purple .status-value { color: #9333ea; }
+        .status-card.orange .status-value { color: #ea580c; }
+        
+        .status-uncertainty {
+            font-size: 0.875rem;
+        }
+        
+        .status-card.blue .status-uncertainty { color: #2563eb; }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        
+        .chart-container {
+            background-color: #f9fafb;
+            padding: 16px;
+            border-radius: 8px;
+        }
+        
+        .chart-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 16px;
+        }
+        
+        .chart-canvas {
+            width: 100% !important;
+            height: 300px !important;
+        }
+        
+        .algorithm-info {
+            background-color: #f9fafb;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 24px;
+        }
+        
+        .algorithm-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+        
+        .algorithm-text {
+            color: #6b7280;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .algorithm-text p {
+            margin-bottom: 8px;
+        }
+        
+        .time-display {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">
+                🔋 Battery Level Kalman Filter
+            </h1>
+            <p class="subtitle">
+                Real-time estimation of battery state-of-charge using voltage and current measurements
+            </p>
+            
+            <div class="info-box">
+                <h3 class="info-title">Consumer Applications & Benefits</h3>
+                <div class="info-text">
+                    <p><strong>Smartphones & Laptops:</strong> Provides accurate battery percentage even when voltage readings fluctuate due to temperature changes or aging batteries.</p>
+                    <p><strong>Electric Vehicles:</strong> Gives drivers reliable range estimates by combining multiple sensors and learning battery degradation patterns over time.</p>
+                    <p><strong>Power Tools & Drones:</strong> Prevents unexpected shutdowns by filtering sensor noise and predicting remaining runtime under varying loads.</p>
+                    <p><strong>Key Benefits:</strong> More accurate estimates than simple voltage meters, adapts to battery aging, reduces "battery anxiety" by providing reliable predictions, and extends battery life through better management.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="toggleBtn" class="btn btn-primary">
+                ▶️ Start
+            </button>
+            
+            <button id="resetBtn" class="btn btn-secondary">
+                🔄 Reset
+            </button>
+            
+            <div class="time-display">
+                Time: <span id="timeDisplay">0</span>s
+            </div>
+        </div>
+        
+        <div class="status-grid">
+            <div class="status-card blue">
+                <h3>Estimated SoC</h3>
+                <div class="status-value" id="socValue">100.0%</div>
+                <div class="status-uncertainty" id="socUncertainty">±5.0%</div>
+            </div>
+            
+            <div class="status-card green">
+                <h3>Capacity</h3>
+                <div class="status-value" id="capacityValue">10.00 Ah</div>
+            </div>
+            
+            <div class="status-card purple">
+                <h3>Voltage</h3>
+                <div class="status-value" id="voltageValue">-- V</div>
+            </div>
+            
+            <div class="status-card orange">
+                <h3>Current</h3>
+                <div class="status-value" id="currentValue">-- A</div>
+            </div>
+        </div>
+        
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3 class="chart-title">State of Charge Estimation</h3>
+                <canvas id="socChart" class="chart-canvas"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="chart-title">Voltage Measurements</h3>
+                <canvas id="voltageChart" class="chart-canvas"></canvas>
+            </div>
+        </div>
+        
+        <div class="algorithm-info">
+            <h3 class="algorithm-title">How It Works</h3>
+            <div class="algorithm-text">
+                <p><strong>State Vector:</strong> [State of Charge %, Battery Capacity Ah]</p>
+                <p><strong>Measurements:</strong> Noisy voltage and current readings</p>
+                <p><strong>Prediction:</strong> SoC decreases based on current draw and capacity</p>
+                <p><strong>Update:</strong> Corrects estimate using voltage-SoC relationship</p>
+                <p><strong>Benefits:</strong> Smooths noisy measurements, estimates uncertainty, adapts to battery aging</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class KalmanFilter {
+            constructor() {
+                this.x = [100, 10];
+                this.P = [[25, 0], [0, 1]];
+                this.Q = [[0.1, 0], [0, 0.01]];
+                this.R = [[4, 0], [0, 0.25]];
+                this.dt = 1;
+            }
+            
+            multiply(A, B) {
+                const result = Array(A.length).fill().map(() => Array(B[0].length).fill(0));
+                for (let i = 0; i < A.length; i++) {
+                    for (let j = 0; j < B[0].length; j++) {
+                        for (let k = 0; k < B.length; k++) {
+                            result[i][j] += A[i][k] * B[k][j];
+                        }
+                    }
+                }
+                return result;
+            }
+            
+            transpose(matrix) {
+                return matrix[0].map((_, i) => matrix.map(row => row[i]));
+            }
+            
+            add(A, B) {
+                return A.map((row, i) => row.map((val, j) => val + B[i][j]));
+            }
+            
+            subtract(A, B) {
+                return A.map((row, i) => row.map((val, j) => val - B[i][j]));
+            }
+            
+            inverse2x2(matrix) {
+                const a = matrix[0][0], b = matrix[0][1];
+                const c = matrix[1][0], d = matrix[1][1];
+                const det = a * d - b * c;
+                return [[d / det, -b / det], [-c / det, a / det]];
+            }
+            
+            predict(current_draw) {
+                const capacity_ah = this.x[1];
+                const soc_change = -(current_draw * this.dt / capacity_ah) * 100;
+                const F = [[1, soc_change / capacity_ah], [0, 1]];
+                const x_pred = [this.x[0] + soc_change, this.x[1]];
+                const FT = this.transpose(F);
+                const P_pred = this.add(this.multiply(this.multiply(F, this.P), FT), this.Q);
+                this.x = x_pred;
+                this.P = P_pred;
+            }
+            
+            update(voltage, current) {
+                const soc = this.x[0];
+                const expected_voltage = 3.2 + (soc / 100) * 0.9;
+                const expected_current = current;
+                const H = [[0.009, 0], [0, 0]];
+                const z = [voltage, current];
+                const h = [expected_voltage, expected_current];
+                const y = this.subtract([z], [h])[0];
+                const HT = this.transpose(H);
+                const S = this.add(this.multiply(this.multiply(H, this.P), HT), this.R);
+                const K = this.multiply(this.multiply(this.P, HT), this.inverse2x2(S));
+                const Ky = this.multiply(K, [[y[0]], [y[1]]]);
+                this.x = [this.x[0] + Ky[0][0], this.x[1] + Ky[1][0]];
+                const I = [[1, 0], [0, 1]];
+                const I_KH = this.subtract(I, this.multiply(K, H));
+                this.P = this.multiply(I_KH, this.P);
+                this.x[0] = Math.max(0, Math.min(100, this.x[0]));
+            }
+            
+            getState() {
+                return {
+                    soc: this.x[0],
+                    capacity: this.x[1],
+                    uncertainty: Math.sqrt(this.P[0][0])
+                };
+            }
+        }
+
+        let isRunning = false;
+        let time = 0;
+        let kalmanFilter = new KalmanFilter();
+        let interval = null;
+        let socChart, voltageChart;
+        const maxDataPoints = 50;
+        const socData = [];
+        const voltageData = [];
+        
+        function simulateReading(t) {
+            const baseTime = t / 10;
+            const trueSoc = Math.max(0, 100 - baseTime * 2);
+            const trueVoltage = 3.2 + (trueSoc / 100) * 0.9;
+            const trueCurrent = 2.0 + Math.sin(baseTime / 10) * 0.5;
+            const voltageNoise = (Math.random() - 0.5) * 0.4;
+            const currentNoise = (Math.random() - 0.5) * 1.0;
+            
+            return {
+                time: t,
+                trueVoltage: trueVoltage,
+                trueCurrent: trueCurrent,
+                trueSoc: trueSoc,
+                measuredVoltage: trueVoltage + voltageNoise,
+                measuredCurrent: trueCurrent + currentNoise
+            };
+        }
+        
+        function updateCharts() {
+            socChart.update('none');
+            voltageChart.update('none');
+        }
+        
+        function step() {
+            const reading = simulateReading(time);
+            kalmanFilter.predict(reading.measuredCurrent);
+            kalmanFilter.update(reading.measuredVoltage, reading.measuredCurrent);
+            const state = kalmanFilter.getState();
+            
+            if (socData.length >= maxDataPoints) {
+                socData.shift();
+                socChart.data.labels.shift();
+                socChart.data.datasets[0].data.shift();
+                socChart.data.datasets[1].data.shift();
+            }
+            
+            if (voltageData.length >= maxDataPoints) {
+                voltageData.shift();
+                voltageChart.data.labels.shift();
+                voltageChart.data.datasets[0].data.shift();
+                voltageChart.data.datasets[1].data.shift();
+            }
+            
+            socData.push({
+                time: time,
+                trueSoc: reading.trueSoc,
+                estimatedSoc: state.soc
+            });
+            
+            voltageData.push({
+                time: time,
+                trueVoltage: reading.trueVoltage,
+                measuredVoltage: reading.measuredVoltage
+            });
+            
+            socChart.data.labels.push(time);
+            socChart.data.datasets[0].data.push(reading.trueSoc);
+            socChart.data.datasets[1].data.push(state.soc);
+            
+            voltageChart.data.labels.push(time);
+            voltageChart.data.datasets[0].data.push(reading.trueVoltage);
+            voltageChart.data.datasets[1].data.push(reading.measuredVoltage);
+            
+            document.getElementById('socValue').textContent = state.soc.toFixed(1) + '%';
+            document.getElementById('socUncertainty').textContent = '±' + state.uncertainty.toFixed(1) + '%';
+            document.getElementById('capacityValue').textContent = state.capacity.toFixed(2) + ' Ah';
+            document.getElementById('voltageValue').textContent = reading.measuredVoltage.toFixed(2) + ' V';
+            document.getElementById('currentValue').textContent = reading.trueCurrent.toFixed(2) + ' A';
+            document.getElementById('timeDisplay').textContent = time;
+            
+            updateCharts();
+            time++;
+        }
+        
+        function toggle() {
+            isRunning = !isRunning;
+            const btn = document.getElementById('toggleBtn');
+            
+            if (isRunning) {
+                btn.textContent = '⏸️ Pause';
+                btn.className = 'btn btn-danger';
+                interval = setInterval(step, 200);
+            } else {
+                btn.textContent = '▶️ Start';
+                btn.className = 'btn btn-primary';
+                clearInterval(interval);
+            }
+        }
+        
+        function reset() {
+            isRunning = false;
+            time = 0;
+            kalmanFilter = new KalmanFilter();
+            clearInterval(interval);
+            
+            const btn = document.getElementById('toggleBtn');
+            btn.textContent = '▶️ Start';
+            btn.className = 'btn btn-primary';
+            
+            socData.length = 0;
+            voltageData.length = 0;
+            
+            socChart.data.labels = [];
+            socChart.data.datasets[0].data = [];
+            socChart.data.datasets[1].data = [];
+            
+            voltageChart.data.labels = [];
+            voltageChart.data.datasets[0].data = [];
+            voltageChart.data.datasets[1].data = [];
+            
+            const state = kalmanFilter.getState();
+            document.getElementById('socValue').textContent = state.soc.toFixed(1) + '%';
+            document.getElementById('socUncertainty').textContent = '±' + state.uncertainty.toFixed(1) + '%';
+            document.getElementById('capacityValue').textContent = state.capacity.toFixed(2) + ' Ah';
+            document.getElementById('voltageValue').textContent = '-- V';
+            document.getElementById('currentValue').textContent = '-- A';
+            document.getElementById('timeDisplay').textContent = '0';
+            
+            updateCharts();
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const socCtx = document.getElementById('socChart').getContext('2d');
+            socChart = new Chart(socCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'True SoC',
+                        data: [],
+                        borderColor: '#10b981',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }, {
+                        label: 'Kalman Estimate',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 100
+                        }
+                    },
+                    animation: false
+                }
+            });
+            
+            const voltageCtx = document.getElementById('voltageChart').getContext('2d');
+            voltageChart = new Chart(voltageCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'True Voltage',
+                        data: [],
+                        borderColor: '#10b981',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0
+                    }, {
+                        label: 'Measured (Noisy)',
+                        data: [],
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'transparent',
+                        borderWidth: 1,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            min: 3.0,
+                            max: 4.2
+                        }
+                    },
+                    animation: false
+                }
+            });
+            
+            document.getElementById('toggleBtn').addEventListener('click', toggle);
+            document.getElementById('resetBtn').addEventListener('click', reset);
+        });
+    </script>
+</body>
+</html>
